@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.env
+*.db
+data/raw/*
+data/normalized/*
+data/features/*
+data/embeddings/*
+data/forecasts/*
+!data/**/.gitkeep
+mlruns/

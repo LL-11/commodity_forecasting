@@ -1,0 +1,6 @@
+database: data/commodity_ai.db
+commodity: Henry Hub Natural Gas
+unit: USD/MMBtu
+horizons: [1, 5, 20]
+minimum_training_rows: 40
+retraining_frequency: 5

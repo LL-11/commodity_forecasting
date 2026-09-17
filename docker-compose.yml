@@ -1,0 +1,94 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      COMMODITY_AI_DB: /app/data/commodity_ai.db
+      COMMODITY_AI_MODEL_BACKEND: xgboost
+      COMMODITY_AI_MLFLOW_ENABLED: "true"
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.5}
+      COMMODITY_AI_MCP_URL: http://mcp:8001/mcp
+      EIA_API_KEY: ${EIA_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    command: ["uvicorn", "commodity_ai.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    environment:
+      COMMODITY_AI_DB: /app/data/commodity_ai.db
+      COMMODITY_AI_MODEL_BACKEND: xgboost
+      COMMODITY_AI_MLFLOW_ENABLED: "true"
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.5}
+      COMMODITY_AI_MCP_URL: http://mcp:8001/mcp
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  mlflow:
+    build: .
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri
+      - sqlite:////app/data/mlflow.db
+      - --default-artifact-root
+      - /app/data/mlartifacts
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  mcp:
+    build: .
+    command:
+      - python
+      - -c
+      - from commodity_ai.mcp_server import mcp; mcp.run('streamable-http', host='0.0.0.0', port=8001, stateless_http=True)
+    ports:
+      - "8001:8001"
+    environment:
+      COMMODITY_AI_DB: /app/data/commodity_ai.db
+      COMMODITY_AI_MODEL_BACKEND: xgboost
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8001), 3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 15

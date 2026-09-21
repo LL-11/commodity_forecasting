@@ -22,7 +22,7 @@ mcp = MCPServer("energy-market-mcp")
 
 @mcp.tool()
 def get_henry_hub_history(start_date: str, end_date: str, as_of: str) -> list[dict[str, object]]:
-    """Get price observations available at the supplied point in time."""
+    """Get point-in-time prices; start_date/end_date must use YYYY-MM-DD."""
     rows = repo.prices_as_of(parse_datetime(as_of), parse_date(start_date), parse_date(end_date))
     return [
         {
@@ -49,6 +49,7 @@ def get_storage_summary(as_of: str) -> dict[str, object]:
 
 @mcp.tool()
 def get_weather_signal(as_of: str, horizon: int) -> dict[str, object]:
+    """Get an aggregated 7- or 14-day weather signal; horizon must be 7 or 14."""
     return market_service.weather_signal(parse_datetime(as_of), horizon)
 
 
@@ -82,7 +83,7 @@ def search_market_intelligence(
     document_type: str | None = None,
     publisher: str | None = None,
 ) -> list[dict[str, object]]:
-    """Hybrid report-chunk search with hard point-in-time and metadata filters."""
+    """Hybrid point-in-time report search; optional metadata filters require exact values."""
     filters = SearchFilters(commodity, region, document_type, publisher)
     return [
         item.__dict__ for item in retrieval.search(query, parse_datetime(as_of), top_k, filters)

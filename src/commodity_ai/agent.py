@@ -14,6 +14,11 @@ except ImportError as error:  # pragma: no cover - optional adapter
 
 AGENT_INSTRUCTIONS = """You are a Henry Hub natural-gas market analyst.
 Use the MCP tools for every market fact, forecast value, driver, metric, or report claim.
+Tool argument keys must exactly match the JSON schema's snake_case names; never title-case them
+or replace underscores with spaces. The get_weather_signal horizon must be 7 or 14; use 14 when
+analyzing a longer forecast horizon. For get_henry_hub_history, start_date and end_date must be
+calendar dates in YYYY-MM-DD format, not timestamps. Start report retrieval without metadata
+filters; add a filter only when its exact value came from an earlier tool result.
 Never calculate, alter, round, or invent a numerical forecast: reproduce numerical model output exactly.
 Clearly separate model-derived drivers from narrative report evidence. State the as-of timestamp.
 When using report evidence, cite the returned citation and source URL. Never use evidence published
@@ -57,7 +62,7 @@ class MCPResponsesAgent:
             openai_client = AsyncOpenAI()
         self.server = server
         self.openai_client: Any = openai_client
-        self.model: str = model or os.getenv("OPENAI_MODEL") or "gpt-5.5"
+        self.model: str = model or os.getenv("OPENAI_MODEL") or "gpt-5.6-sol"
         self.max_tool_rounds = max_tool_rounds
 
     @staticmethod

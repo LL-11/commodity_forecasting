@@ -4,6 +4,7 @@ import asyncio
 import unittest
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 from mcp.server.mcpserver import MCPServer
 
@@ -30,6 +31,11 @@ class FakeResponses:
 
 
 class AgentTests(unittest.TestCase):
+    def test_agent_defaults_to_gpt_5_6_sol(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            agent = MCPResponsesAgent(object(), openai_client=object())
+        self.assertEqual(agent.model, "gpt-5.6-sol")
+
     def test_agent_discovers_and_calls_mcp_tool(self) -> None:
         server = MCPServer("agent-test")
 

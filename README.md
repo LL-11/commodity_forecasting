@@ -57,7 +57,7 @@ $env:COMMODITY_AI_EMBEDDING_PROVIDER = "openai"
 $env:OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 ```
 
-The Ask AI view also requires `OPENAI_API_KEY`. `OPENAI_MODEL` defaults to `gpt-5.5`. The agent connects to `COMMODITY_AI_MCP_URL` when set; otherwise it uses the same MCP server in-process.
+The Ask AI view also requires `OPENAI_API_KEY`. `OPENAI_MODEL` defaults to `gpt-5.6-sol`. The agent connects to `COMMODITY_AI_MCP_URL` when set; otherwise it uses the same MCP server in-process.
 
 Run the included retrieval benchmark with:
 

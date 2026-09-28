@@ -31,6 +31,12 @@ def smape(actual: Sequence[float], predicted: Sequence[float]) -> float:
     return fmean(terms) if terms else 0.0
 
 
+def mape(actual: Sequence[float], predicted: Sequence[float]) -> float:
+    """Mean absolute percentage error as a fraction, excluding zero actuals."""
+    terms = [abs(a - p) / abs(a) for a, p in zip(actual, predicted, strict=True) if a != 0]
+    return fmean(terms) if terms else 0.0
+
+
 class Regressor(Protocol):
     def fit(self, x: Sequence[Sequence[float]], y: Sequence[float]) -> Regressor: ...
     def predict(self, x: Sequence[float]) -> float: ...

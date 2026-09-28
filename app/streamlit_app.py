@@ -45,8 +45,14 @@ def number(value: object) -> float:
 
 
 quality = repository.data_quality_summary()
-price_quality = next(row for row in quality if row["dataset"] == "prices")
-default_as_of = str(price_quality["latest_timestamp"] or datetime.now(UTC).isoformat())
+price_quality = next((row for row in quality if row["dataset"] == "prices"), None)
+if price_quality is None:
+    default_as_of = datetime.now(UTC).isoformat()
+    st.sidebar.warning(
+        "No price data is available yet. Load or seed data before running forecast queries."
+    )
+else:
+    default_as_of = str(price_quality["latest_timestamp"] or datetime.now(UTC).isoformat())
 as_of_text = st.sidebar.text_input("As-of timestamp (UTC)", default_as_of)
 st.sidebar.caption("Every query excludes information published after this timestamp.")
 as_of = None

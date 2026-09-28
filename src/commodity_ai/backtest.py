@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from .forecasting import DirectForecastModel, mae, pinball_loss, quantile, rmse, smape
+from .forecasting import DirectForecastModel, mae, mape, pinball_loss, quantile, rmse, smape
 
 
 @dataclass(frozen=True)
@@ -101,6 +101,7 @@ def walk_forward_backtest(
         {
             "mae": model_mae,
             "rmse": rmse(actual, predicted),
+            "mape": mape(actual, predicted),
             "smape": smape(actual, predicted),
             "baseline_mae": baseline_mae,
             "moving_average_baseline_mae": moving_average_mae,

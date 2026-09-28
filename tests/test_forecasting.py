@@ -5,7 +5,7 @@ from datetime import date, timedelta
 
 from commodity_ai.backtest import walk_forward_backtest
 from commodity_ai.demo import seed_demo
-from commodity_ai.forecasting import DirectForecastModel, RidgeRegressor, quantile
+from commodity_ai.forecasting import DirectForecastModel, RidgeRegressor, mape, quantile
 from commodity_ai.repository import MarketRepository
 from commodity_ai.services import ForecastService
 
@@ -19,6 +19,9 @@ class ForecastingTests(unittest.TestCase):
 
     def test_quantile_interpolation(self) -> None:
         self.assertEqual(quantile([0, 10], 0.5), 5)
+
+    def test_mape_excludes_zero_actuals(self) -> None:
+        self.assertEqual(mape([0.0, 2.0, 4.0], [10.0, 1.0, 6.0]), 0.5)
 
     def test_direct_forecast_interval_is_ordered(self) -> None:
         x = [[float(i)] for i in range(30)]
@@ -38,6 +41,7 @@ class ForecastingTests(unittest.TestCase):
         self.assertLessEqual(loaded.p50, loaded.p90)
         self.assertGreater(len(loaded.drivers), 0)
         self.assertIn("walk_forward_mae", loaded.metrics)
+        self.assertIn("test_mape", loaded.metrics)
         self.assertIn("fit_mae", loaded.metrics)
 
     def test_walk_forward_respects_horizon_gap(self) -> None:

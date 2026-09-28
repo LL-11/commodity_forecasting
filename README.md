@@ -67,14 +67,55 @@ commodity-ai evaluate-rag --database data/commodity_ai.db --dataset data/rag_eva
 
 ## MLflow
 
-Tracking is opt-in for local runs:
+MLflow is included in the `ml` and `all` extras. It can also be installed directly with
+`python -m pip install mlflow`. Start the local tracking server from the repository root:
+
+```powershell
+$projectRoot = (Resolve-Path .).Path.Replace("\", "/")
+.\.venv\Scripts\python.exe -m mlflow server `
+  --backend-store-uri "sqlite:///$projectRoot/data/mlflow.db" `
+  --default-artifact-root "$projectRoot/data/mlartifacts" `
+  --port 5000
+```
+
+In a second terminal, enable tracking and run the existing forecasting demo:
 
 ```powershell
 $env:COMMODITY_AI_MLFLOW_ENABLED = "true"
-$env:MLFLOW_TRACKING_URI = "sqlite:///data/mlflow.db"
+$env:MLFLOW_TRACKING_URI = "http://localhost:5000"
+$env:MLFLOW_EXPERIMENT_NAME = "henry-hub-xgboost"
+commodity-ai demo --database data/commodity_ai.db --horizon 20 --run-name baseline
 ```
 
-Every horizon is logged as a separate run. Prediction intervals are calibrated only from walk-forward out-of-sample residuals, not in-sample fit residuals.
+Open `http://localhost:5000` and select `henry-hub-xgboost`. Each trained horizon is one
+run containing XGBoost hyperparameters, feature and period metadata, `test_mae`, `test_rmse`,
+`test_mape`, backtest predictions, feature configuration, feature importance, and the trained
+model. MAPE is stored as a fraction and excludes observations whose actual value is zero.
+Prediction intervals remain calibrated only from walk-forward out-of-sample residuals.
+
+Run the controlled five-run comparison matrix against the same synthetic data and period with:
+
+```powershell
+commodity-ai run-mlflow-experiments --database data/commodity_ai.db --horizon 20
+```
+
+The matrix records `baseline`, `depth-4`, `depth-8`, `lr-005`, and `subsample-100`. For an
+individual run, the `demo` command also accepts XGBoost overrides such as
+`--xgb-max-depth 4`, `--xgb-learning-rate 0.05`, and `--xgb-subsample 1.0`. When multiple
+horizons are requested programmatically, the horizon is appended to the supplied run name.
+Run names are labels only; MLflow run IDs remain authoritative. Tracking failures are raised
+explicitly and are not silently discarded.
+
+In the UI, select multiple runs to compare their parameters, metrics, and artifacts:
+
+```text
+Experiment
+└── Runs
+    ├── Parameters and train/test periods
+    ├── Metrics (MAE, RMSE, MAPE)
+    ├── Configuration and evaluation artifacts
+    └── Trained XGBoost model
+```
 
 ## Containers
 

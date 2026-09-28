@@ -15,6 +15,38 @@ from .rag import MarketIntelligenceRetriever
 from .rag_evaluation import evaluate_retriever, load_evaluation_cases
 from .repository import MarketRepository
 from .services import ForecastService, MarketService
+from .tracking import MLflowTracker
+
+
+def _add_xgboost_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--xgb-n-estimators", type=int)
+    parser.add_argument("--xgb-max-depth", type=int)
+    parser.add_argument("--xgb-learning-rate", type=float)
+    parser.add_argument("--xgb-subsample", type=float)
+    parser.add_argument("--xgb-colsample-bytree", type=float)
+    parser.add_argument("--xgb-min-child-weight", type=float)
+    parser.add_argument("--xgb-gamma", type=float)
+    parser.add_argument("--xgb-reg-alpha", type=float)
+    parser.add_argument("--xgb-reg-lambda", type=float)
+    parser.add_argument("--xgb-random-state", type=int)
+
+
+def _xgboost_parameters(args: argparse.Namespace) -> dict[str, int | float]:
+    names = (
+        "n_estimators",
+        "max_depth",
+        "learning_rate",
+        "subsample",
+        "colsample_bytree",
+        "min_child_weight",
+        "gamma",
+        "reg_alpha",
+        "reg_lambda",
+        "random_state",
+    )
+    return {
+        name: value for name in names if (value := getattr(args, f"xgb_{name}", None)) is not None
+    }
 
 
 def main() -> None:
@@ -23,6 +55,15 @@ def main() -> None:
     demo = subparsers.add_parser("demo", help="run the deterministic synthetic demo")
     demo.add_argument("--database", default="data/commodity_ai.db")
     demo.add_argument("--horizon", type=int, choices=(1, 5, 20), default=20)
+    demo.add_argument("--run-name")
+    _add_xgboost_arguments(demo)
+    experiments = subparsers.add_parser(
+        "run-mlflow-experiments", help="run five controlled local XGBoost experiments"
+    )
+    experiments.add_argument("--database", default="data/commodity_ai.db")
+    experiments.add_argument("--horizon", type=int, choices=(1, 5, 20), default=20)
+    experiments.add_argument("--tracking-uri")
+    experiments.add_argument("--experiment-name")
     ingest = subparsers.add_parser("ingest-eia", help="ingest a versioned Henry Hub snapshot")
     ingest.add_argument("--database", default="data/commodity_ai.db")
     ingest.add_argument("--start")
@@ -45,13 +86,37 @@ def main() -> None:
         repository = MarketRepository(path)
         as_of = seed_demo(repository)
         orchestrator = OutlookOrchestrator(
-            ForecastService(repository),
+            ForecastService(repository, xgboost_params=_xgboost_parameters(args)),
             MarketService(repository),
             MarketIntelligenceRetriever(repository),
         )
-        result = orchestrator.outlook(as_of, args.horizon)
+        result = orchestrator.outlook(as_of, args.horizon, run_name=args.run_name)
         result["data_notice"] = "All demo market values are synthetic."
         print(json.dumps(result, indent=2))
+    elif args.command == "run-mlflow-experiments":
+        repository = MarketRepository(args.database)
+        as_of = seed_demo(repository)
+        tracker = MLflowTracker(
+            enabled=True,
+            tracking_uri=args.tracking_uri,
+            experiment_name=args.experiment_name,
+        )
+        matrix: tuple[tuple[str, dict[str, int | float]], ...] = (
+            ("baseline", {}),
+            ("depth-4", {"max_depth": 4}),
+            ("depth-8", {"max_depth": 8}),
+            ("lr-005", {"learning_rate": 0.05}),
+            ("subsample-100", {"subsample": 1.0}),
+        )
+        completed = []
+        for name, parameters in matrix:
+            record = ForecastService(
+                repository,
+                tracker=tracker,
+                xgboost_params=parameters,
+            ).run_forecast(as_of, [args.horizon], run_name=name)[0]
+            completed.append({"run_name": name, "forecast_id": record.forecast_id})
+        print(json.dumps({"experiment_runs": completed}, indent=2))
     elif args.command == "ingest-eia":
         api_key = os.getenv("EIA_API_KEY", "")
         observed_at = utc_now()

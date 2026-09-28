@@ -19,8 +19,10 @@ class OutlookOrchestrator:
         self.market = market
         self.retriever = retriever
 
-    def outlook(self, as_of: datetime, horizon: int = 20) -> dict[str, object]:
-        forecast = self.forecasts.run_forecast(as_of, [horizon])[0]
+    def outlook(
+        self, as_of: datetime, horizon: int = 20, run_name: str | None = None
+    ) -> dict[str, object]:
+        forecast = self.forecasts.run_forecast(as_of, [horizon], run_name=run_name)[0]
         snapshot = self.market.snapshot(as_of)
         evidence = self.retriever.search(
             "Henry Hub natural gas storage weather production outlook", as_of, 5

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
 
 from .backtest import walk_forward_backtest
 from .domain import Driver, ForecastRecord, utc_now
 from .features import FEATURE_NAMES, FeatureBuilder
 from .forecasting import DirectForecastModel, mae, persistence, rmse, smape
 from .repository import MarketRepository
-from .tracking import MLflowTracker
+from .tracking import ForecastRunConfiguration, MLflowTracker
 
 
 class ForecastService:
@@ -18,6 +20,7 @@ class ForecastService:
         repository: MarketRepository,
         model_backend: str | None = None,
         tracker: MLflowTracker | None = None,
+        xgboost_params: Mapping[str, Any] | None = None,
     ) -> None:
         self.repository = repository
         self.builder = FeatureBuilder(repository)
@@ -28,13 +31,21 @@ class ForecastService:
             raise ValueError("model backend must be 'xgboost' or 'ridge'")
         self.model_version = f"{self.model_backend}-direct-0.2"
         self.tracker = tracker or MLflowTracker()
+        self.xgboost_params = dict(xgboost_params or {})
 
     def _model(self, horizon: int) -> DirectForecastModel:
         if self.model_backend == "ridge":
             return DirectForecastModel(horizon)
         from .xgboost_model import XGBoostRegressor
 
-        return DirectForecastModel(horizon, regressor=XGBoostRegressor())
+        return DirectForecastModel(horizon, regressor=XGBoostRegressor(**self.xgboost_params))
+
+    @staticmethod
+    def _model_parameters(model: DirectForecastModel) -> dict[str, Any]:
+        fitted_model = getattr(model.regressor, "model", None)
+        if fitted_model is not None and hasattr(fitted_model, "get_params"):
+            return dict(fitted_model.get_params())
+        return {"alpha": getattr(model.regressor, "alpha", None)}
 
     def _training_data(
         self, as_of: datetime, horizon: int
@@ -59,7 +70,9 @@ class ForecastService:
             )
         return x, y, dates
 
-    def run_forecast(self, as_of: datetime, horizons: list[int]) -> list[ForecastRecord]:
+    def run_forecast(
+        self, as_of: datetime, horizons: list[int], run_name: str | None = None
+    ) -> list[ForecastRecord]:
         unsupported = set(horizons) - {1, 5, 20}
         if unsupported:
             raise ValueError(f"unsupported horizons: {sorted(unsupported)}")
@@ -78,52 +91,86 @@ class ForecastService:
                 model_factory=self._model,
                 moving_average_baselines=[row[8] for row in x],
             )
-            model = self._model(horizon).fit(x, y)
-            model.calibrate(historical_result.calibration_residuals)
-            prediction = model.predict(current.ordered())
-            fitted = [model.regressor.predict(row) for row in x]
-            naive = [row[0] for row in x]
-            model_mae = mae(y, fitted)
-            naive_mae = mae(y, naive)
             historical = historical_result.metrics
-            contributions = model.regressor.contributions(current.ordered())
-            ranked = sorted(
-                zip(FEATURE_NAMES, contributions), key=lambda pair: abs(pair[1]), reverse=True
-            )
-            drivers = tuple(
-                Driver(name, effect, "positive" if effect >= 0 else "negative")
-                for name, effect in ranked[:8]
-            )
-            metrics = {
-                "training_rows": float(len(x)),
-                "walk_forward_mae": historical["mae"],
-                "walk_forward_rmse": historical["rmse"],
-                "walk_forward_smape": historical["smape"],
-                "walk_forward_naive_mae": historical["baseline_mae"],
-                "walk_forward_moving_average_mae": historical["moving_average_baseline_mae"],
-                "walk_forward_skill_vs_naive": historical["skill_vs_naive"],
-                "walk_forward_skill_vs_moving_average": historical["skill_vs_moving_average"],
-                "walk_forward_interval_coverage": historical["prediction_interval_coverage"],
-                "walk_forward_interval_width": historical["prediction_interval_width"],
-                "walk_forward_directional_accuracy": historical["directional_accuracy"],
-                "walk_forward_p10_pinball_loss": historical["p10_pinball_loss"],
-                "walk_forward_p90_pinball_loss": historical["p90_pinball_loss"],
-                "walk_forward_observations": historical["observations"],
-                "fit_mae": model_mae,
-                "fit_rmse": rmse(y, fitted),
-                "fit_smape": smape(y, fitted),
-                "fit_naive_mae": naive_mae,
-            }
-            run_id = self.tracker.log_forecast_run(
-                model_name=self.model_backend,
-                horizon=horizon,
+            configuration = ForecastRunConfiguration(
+                target="henry_hub_spot_price_usd_per_mmbtu",
+                forecast_horizon=horizon,
                 as_of=as_of,
-                metrics=metrics,
-                x=x,
-                y=y,
-                feature_names=FEATURE_NAMES,
-                model=model,
+                training_start=dates[0],
+                training_end=dates[-1],
+                test_start=historical_result.predictions[0].as_of,
+                test_end=historical_result.predictions[-1].as_of,
+                model_name=self.model_backend,
             )
+            effective_run_name = (
+                f"{run_name}-{horizon}d" if run_name and len(horizons) > 1 else run_name
+            )
+            model = self._model(horizon)
+            with self.tracker.start_run(
+                run_name=effective_run_name, model_name=self.model_backend
+            ) as run_id:
+                self.tracker.log_forecast_configuration(
+                    configuration=configuration,
+                    x=x,
+                    y=y,
+                    feature_names=FEATURE_NAMES,
+                    model_parameters=self._model_parameters(model),
+                )
+                # The final fit occurs inside the run so MLflow XGBoost autologging
+                # captures hyperparameters, feature importance, and the model artifact.
+                model.fit(x, y)
+                model.calibrate(historical_result.calibration_residuals)
+                prediction = model.predict(current.ordered())
+                fitted = [model.regressor.predict(row) for row in x]
+                naive = [row[0] for row in x]
+                contributions = model.regressor.contributions(current.ordered())
+                ranked = sorted(
+                    zip(FEATURE_NAMES, contributions),
+                    key=lambda pair: abs(pair[1]),
+                    reverse=True,
+                )
+                drivers = tuple(
+                    Driver(name, effect, "positive" if effect >= 0 else "negative")
+                    for name, effect in ranked[:8]
+                )
+                metrics = {
+                    "test_mae": historical["mae"],
+                    "test_rmse": historical["rmse"],
+                    "test_mape": historical["mape"],
+                    "training_rows": float(len(x)),
+                    "walk_forward_mae": historical["mae"],
+                    "walk_forward_rmse": historical["rmse"],
+                    "walk_forward_mape": historical["mape"],
+                    "walk_forward_smape": historical["smape"],
+                    "walk_forward_naive_mae": historical["baseline_mae"],
+                    "walk_forward_moving_average_mae": historical["moving_average_baseline_mae"],
+                    "walk_forward_skill_vs_naive": historical["skill_vs_naive"],
+                    "walk_forward_skill_vs_moving_average": historical["skill_vs_moving_average"],
+                    "walk_forward_interval_coverage": historical["prediction_interval_coverage"],
+                    "walk_forward_interval_width": historical["prediction_interval_width"],
+                    "walk_forward_directional_accuracy": historical["directional_accuracy"],
+                    "walk_forward_p10_pinball_loss": historical["p10_pinball_loss"],
+                    "walk_forward_p90_pinball_loss": historical["p90_pinball_loss"],
+                    "walk_forward_observations": historical["observations"],
+                    "fit_mae": mae(y, fitted),
+                    "fit_rmse": rmse(y, fitted),
+                    "fit_smape": smape(y, fitted),
+                    "fit_naive_mae": mae(y, naive),
+                }
+                self.tracker.log_metrics(metrics)
+                self.tracker.log_backtest_predictions(
+                    [
+                        {
+                            "as_of": row.as_of.isoformat(),
+                            "actual": row.actual,
+                            "predicted": row.predicted,
+                            "baseline": row.baseline,
+                            "p10": row.p10,
+                            "p90": row.p90,
+                        }
+                        for row in historical_result.predictions
+                    ]
+                )
             if run_id:
                 metrics["mlflow_run_recorded"] = 1.0
             record = ForecastRecord(

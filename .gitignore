@@ -12,5 +12,6 @@ data/normalized/*
 data/features/*
 data/embeddings/*
 data/forecasts/*
+data/mlartifacts/
 !data/**/.gitkeep
 mlruns/

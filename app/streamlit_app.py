@@ -8,6 +8,7 @@ from typing import cast
 
 import streamlit as st
 
+from commodity_ai.dashboard import build_henry_hub_price_chart, prepare_price_chart_data
 from commodity_ai.domain import ForecastRecord, parse_datetime
 from commodity_ai.rag import MarketIntelligenceRetriever, SearchFilters
 from commodity_ai.rag_evaluation import evaluate_retriever, load_evaluation_cases
@@ -106,10 +107,10 @@ with market_tab:
                 "14-day temp anomaly", f"{anomaly:+.1f}°F" if anomaly is not None else "Unavailable"
             )
             prices = repository.prices_as_of(as_of)
-            st.line_chart(
-                {"Henry Hub USD/MMBtu": [row.price for row in prices[-120:]]},
-                x_label="Recent observations",
-                y_label="USD/MMBtu",
+            price_chart_data = prepare_price_chart_data(prices)
+            st.altair_chart(
+                build_henry_hub_price_chart(price_chart_data),
+                use_container_width=True,
             )
             st.caption(
                 f"Price observation: {snapshot['price_date']} · "

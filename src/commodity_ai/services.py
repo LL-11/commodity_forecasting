@@ -13,6 +13,8 @@ from .forecasting import DirectForecastModel, mae, persistence, rmse, smape
 from .repository import MarketRepository
 from .tracking import ForecastRunConfiguration, MLflowTracker
 
+FORECAST_TRAINING_MODES = {"historical", "point_in_time"}
+
 
 class ForecastService:
     def __init__(
@@ -48,9 +50,16 @@ class ForecastService:
         return {"alpha": getattr(model.regressor, "alpha", None)}
 
     def _training_data(
-        self, as_of: datetime, horizon: int
+        self, as_of: datetime, horizon: int, training_mode: str
     ) -> tuple[list[list[float]], list[float], list[date]]:
+        if training_mode not in FORECAST_TRAINING_MODES:
+            raise ValueError("training_mode must be 'historical' or 'point_in_time'")
         prices = self.repository.prices_as_of(as_of)
+        storage_history = (
+            self.repository.storage_history_as_of(as_of) if training_mode == "historical" else []
+        )
+        storage_index = 0
+        historical_storage = None
         x: list[list[float]] = []
         y: list[float] = []
         dates: list[date] = []
@@ -58,7 +67,25 @@ class ForecastService:
             cutoff = datetime.combine(prices[index].observation_date, time.max, tzinfo=UTC)
             cutoff = min(cutoff, as_of)
             try:
-                row = self.builder.build(cutoff)
+                if training_mode == "historical":
+                    # EIA storage for a Friday period end is normally released the
+                    # following Thursday. Keep that availability lag even though
+                    # bulk history does not contain the original release timestamp.
+                    eligible_storage_period = prices[index].observation_date - timedelta(days=6)
+                    while (
+                        storage_index < len(storage_history)
+                        and storage_history[storage_index].period_end <= eligible_storage_period
+                    ):
+                        historical_storage = storage_history[storage_index]
+                        storage_index += 1
+                    row = self.builder.build_historical(
+                        cutoff,
+                        as_of,
+                        prices[index - 20 : index + 1],
+                        historical_storage,
+                    )
+                else:
+                    row = self.builder.build(cutoff)
             except ValueError:
                 continue
             x.append(row.ordered())
@@ -71,22 +98,29 @@ class ForecastService:
         return x, y, dates
 
     def run_forecast(
-        self, as_of: datetime, horizons: list[int], run_name: str | None = None
+        self,
+        as_of: datetime,
+        horizons: list[int],
+        run_name: str | None = None,
+        training_mode: str = "point_in_time",
     ) -> list[ForecastRecord]:
         unsupported = set(horizons) - {1, 5, 20}
         if unsupported:
             raise ValueError(f"unsupported horizons: {sorted(unsupported)}")
+        if training_mode not in FORECAST_TRAINING_MODES:
+            raise ValueError("training_mode must be 'historical' or 'point_in_time'")
         current = self.builder.build(as_of)
         results: list[ForecastRecord] = []
         for horizon in horizons:
-            x, y, dates = self._training_data(as_of, horizon)
+            x, y, dates = self._training_data(as_of, horizon, training_mode)
+            retraining_frequency = max(5, len(x) // 50) if training_mode == "historical" else 5
             historical_result = walk_forward_backtest(
                 x,
                 y,
                 [row[0] for row in x],
                 dates,
                 horizon,
-                retraining_frequency=5,
+                retraining_frequency=retraining_frequency,
                 minimum_training_rows=min(40, len(x) // 2),
                 model_factory=self._model,
                 moving_average_baselines=[row[8] for row in x],
@@ -101,6 +135,7 @@ class ForecastService:
                 test_start=historical_result.predictions[0].as_of,
                 test_end=historical_result.predictions[-1].as_of,
                 model_name=self.model_backend,
+                training_mode=training_mode,
             )
             effective_run_name = (
                 f"{run_name}-{horizon}d" if run_name and len(horizons) > 1 else run_name
@@ -115,6 +150,16 @@ class ForecastService:
                     y=y,
                     feature_names=FEATURE_NAMES,
                     model_parameters=self._model_parameters(model),
+                    experiment_details={
+                        "training_mode": training_mode,
+                        "walk_forward_retraining_frequency": retraining_frequency,
+                        "evaluation_notice": (
+                            "Non-vintage evaluation using latest bulk history; metrics may "
+                            "be revision-biased. Historical weather vintages are unavailable."
+                            if training_mode == "historical"
+                            else "Point-in-time feature replay."
+                        ),
+                    },
                 )
                 # The final fit occurs inside the run so MLflow XGBoost autologging
                 # captures hyperparameters, feature importance, and the model artifact.
@@ -152,10 +197,13 @@ class ForecastService:
                     "walk_forward_p10_pinball_loss": historical["p10_pinball_loss"],
                     "walk_forward_p90_pinball_loss": historical["p90_pinball_loss"],
                     "walk_forward_observations": historical["observations"],
+                    "walk_forward_retraining_frequency": float(retraining_frequency),
                     "fit_mae": mae(y, fitted),
                     "fit_rmse": rmse(y, fitted),
                     "fit_smape": smape(y, fitted),
                     "fit_naive_mae": mae(y, naive),
+                    "historical_training_mode": float(training_mode == "historical"),
+                    "point_in_time_training_mode": float(training_mode == "point_in_time"),
                 }
                 self.tracker.log_metrics(metrics)
                 self.tracker.log_backtest_predictions(
@@ -177,7 +225,7 @@ class ForecastService:
                 forecast_id=str(uuid.uuid4()),
                 as_of_timestamp=as_of,
                 latest_data_timestamp=current.latest_data_timestamp,
-                model_version=self.model_version,
+                model_version=f"{self.model_version}-{training_mode}",
                 horizon=horizon,
                 point_forecast=prediction.point,
                 p10=prediction.p10,

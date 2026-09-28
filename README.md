@@ -9,6 +9,7 @@ A point-in-time-correct forecasting and market-intelligence platform for Henry H
 - Persistence and five-day-average baselines, walk-forward validation, out-of-sample residual calibration, interval coverage, pinball loss, and skill metrics
 - Native XGBoost TreeSHAP contributions persisted with each forecast
 - Optional MLflow experiment, metric, dataset fingerprint, Git revision, feature manifest, and model artifact tracking
+- Fixed-width rolling XGBoost backtests with leakage-safe prior-only interval calibration and nested MLflow period runs
 - Point-in-time hybrid BM25/TF-IDF/vector retrieval, persistent embeddings, deterministic reranking, metadata filters, citations, and a RAG benchmark CLI
 - MCP tools, resources, templates, and an OpenAI Responses API agent that discovers and calls the MCP server
 - FastAPI endpoints and a seven-view Streamlit application for market, forecast, drivers, intelligence, Ask AI, evaluation, and data quality
@@ -46,6 +47,13 @@ commodity-ai ingest-live --start 2018-01-01 --database data/commodity_ai.db
 ```
 
 This writes immutable source responses under `data/raw/` and normalized price, storage, weather, report, and report-chunk rows to SQLite. Because EIA series responses do not carry row-level release times, first-seen ingestion time is used conservatively as publication time.
+
+The Forecast view offers two explicit training modes. **Historical (bulk EIA,
+non-vintage)** trains immediately on the latest bulk price and storage history, keeps
+the normal storage-release lag, and omits unavailable historical weather vintages.
+Its evaluation can be revision-biased and is labeled accordingly. **Point-in-time**
+replays only data visible at each cutoff and therefore requires accumulated ingestion
+snapshots before it can train.
 
 ## RAG and agent configuration
 
@@ -105,6 +113,38 @@ individual run, the `demo` command also accepts XGBoost overrides such as
 horizons are requested programmatically, the horizon is appended to the supplied run name.
 Run names are labels only; MLflow run IDs remain authoritative. Tracking failures are raised
 explicitly and are not silently discarded.
+
+Evaluate one XGBoost configuration over successive, disjoint historical periods with:
+
+```powershell
+$env:MLFLOW_TRACKING_URI = "http://localhost:5000"
+$env:MLFLOW_EXPERIMENT_NAME = "henry-hub-rolling-backtest"
+commodity-ai rolling-backtest --database data/commodity_ai.db --seed-demo `
+  --horizon 20 --train-window 40 --test-window 10 --step 10 `
+  --run-name xgb-20d-rolling
+```
+
+This command always enables MLflow tracking. It creates one `rolling_summary` parent run and
+one nested `rolling_window` child run for each complete period. Each child contains its own
+metrics, auditable training/evaluation snapshots and fingerprints, predictions, configuration,
+and fitted XGBoost model. Interval bounds at an origin use only earlier out-of-sample residuals
+whose targets were already published by that origin's cutoff.
+
+The deterministic demo currently produces five complete periods (50 predictions) and reports
+two trailing origins as skipped rather than evaluating an incomplete sixth period. These are
+the results from an actual run with the command above; interval coverage has 10 eligible
+prior-calibrated observations in every period:
+
+| Period | Test dates | N | XGBoost MAE | Persistence MAE | Skill vs. persistence | P10-P90 coverage |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 0 | 2025-06-03 to 2025-06-16 | 10 | 0.569 | 0.346 | -0.645 | 0.00 |
+| 1 | 2025-06-17 to 2025-06-30 | 10 | 0.586 | 0.169 | -2.460 | 0.20 |
+| 2 (best) | 2025-07-01 to 2025-07-14 | 10 | 0.269 | 0.315 | 0.145 | 1.00 |
+| 3 | 2025-07-15 to 2025-07-28 | 10 | 0.564 | 0.659 | 0.144 | 0.40 |
+| 4 (worst) | 2025-07-29 to 2025-08-11 | 10 | 0.768 | 0.550 | -0.396 | 0.00 |
+
+The pooled MAE is 0.551 versus 0.408 for persistence (skill -0.352). This synthetic result is a
+workflow demonstration only; it is not evidence of live-market predictive performance.
 
 In the UI, select multiple runs to compare their parameters, metrics, and artifacts:
 

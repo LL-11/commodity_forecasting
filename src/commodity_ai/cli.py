@@ -14,6 +14,7 @@ from .orchestrator import OutlookOrchestrator
 from .rag import MarketIntelligenceRetriever
 from .rag_evaluation import evaluate_retriever, load_evaluation_cases
 from .repository import MarketRepository
+from .rolling_backtest import RollingBacktestService
 from .services import ForecastService, MarketService
 from .tracking import MLflowTracker
 
@@ -64,6 +65,20 @@ def main() -> None:
     experiments.add_argument("--horizon", type=int, choices=(1, 5, 20), default=20)
     experiments.add_argument("--tracking-uri")
     experiments.add_argument("--experiment-name")
+    rolling = subparsers.add_parser(
+        "rolling-backtest",
+        help="evaluate one XGBoost configuration across historical periods",
+    )
+    rolling.add_argument("--database", default="data/commodity_ai.db")
+    rolling.add_argument("--seed-demo", action="store_true")
+    rolling.add_argument("--horizon", type=int, choices=(1, 5, 20), required=True)
+    rolling.add_argument("--train-window", type=int, default=40)
+    rolling.add_argument("--test-window", type=int, default=10)
+    rolling.add_argument("--step", type=int)
+    rolling.add_argument("--run-name")
+    rolling.add_argument("--tracking-uri")
+    rolling.add_argument("--experiment-name")
+    _add_xgboost_arguments(rolling)
     ingest = subparsers.add_parser("ingest-eia", help="ingest a versioned Henry Hub snapshot")
     ingest.add_argument("--database", default="data/commodity_ai.db")
     ingest.add_argument("--start")
@@ -117,6 +132,67 @@ def main() -> None:
             ).run_forecast(as_of, [args.horizon], run_name=name)[0]
             completed.append({"run_name": name, "forecast_id": record.forecast_id})
         print(json.dumps({"experiment_runs": completed}, indent=2))
+    elif args.command == "rolling-backtest":
+        step = args.step if args.step is not None else args.test_window
+        if args.train_window < 40:
+            parser.error("rolling-backtest: --train-window must be at least 40")
+        if args.test_window < 1 or step < 1:
+            parser.error("rolling-backtest: window sizes and step must be positive")
+        if step < args.test_window:
+            parser.error(
+                "rolling-backtest: --step must be at least --test-window for disjoint periods"
+            )
+        backend = os.getenv("COMMODITY_AI_MODEL_BACKEND", "xgboost").lower()
+        if backend != "xgboost":
+            parser.error("rolling-backtest supports only COMMODITY_AI_MODEL_BACKEND=xgboost")
+        repository = MarketRepository(args.database)
+        if args.seed_demo:
+            seed_demo(repository)
+        tracker = MLflowTracker(
+            enabled=True,
+            tracking_uri=args.tracking_uri,
+            experiment_name=(
+                args.experiment_name
+                or os.getenv("MLFLOW_EXPERIMENT_NAME")
+                or "henry-hub-rolling-backtest"
+            ),
+        )
+        try:
+            rolling_result = RollingBacktestService(
+                repository,
+                tracker,
+                _xgboost_parameters(args),
+            ).run(
+                horizon=args.horizon,
+                train_window=args.train_window,
+                test_window=args.test_window,
+                step=step,
+                run_name=args.run_name,
+            )
+        except ValueError as error:
+            parser.error(f"rolling-backtest: {error}")
+        summary = rolling_result.evaluation.summary
+        print(
+            json.dumps(
+                {
+                    "parent_run_id": rolling_result.parent_run_id,
+                    "child_run_ids": rolling_result.child_run_ids,
+                    "period_count": summary["period_count"],
+                    "prediction_count": summary["prediction_count"],
+                    "interval_observation_count": summary["interval_observation_count"],
+                    "trailing_origins_skipped": summary["trailing_origins_skipped"],
+                    "best_period_by_mae": summary["best_period_by_mae"],
+                    "worst_period_by_mae": summary["worst_period_by_mae"],
+                    "pooled_metrics": summary["pooled_metrics"],
+                    "data_notice": (
+                        "Results use deterministic synthetic observations."
+                        if summary["data_kind"] == "synthetic"
+                        else "Results use the database's published market observations."
+                    ),
+                },
+                indent=2,
+            )
+        )
     elif args.command == "ingest-eia":
         api_key = os.getenv("EIA_API_KEY", "")
         observed_at = utc_now()

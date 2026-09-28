@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from statistics import fmean, pstdev
 
+from .domain import PriceObservation, StorageObservation, WeatherObservation
 from .repository import MarketRepository
 
 FEATURE_NAMES = (
@@ -58,23 +60,49 @@ class FeatureBuilder:
 
     def build(self, as_of: datetime) -> FeatureVector:
         prices = self.repository.prices_as_of(as_of)
+        storage = self.repository.latest_storage_as_of(as_of)
+        weather = self.repository.weather_as_of(as_of, as_of.date() + timedelta(days=14))
+        return self._assemble(as_of, as_of, prices, storage, weather)
+
+    def build_historical(
+        self,
+        feature_as_of: datetime,
+        knowledge_as_of: datetime,
+        prices: Sequence[PriceObservation],
+        storage: StorageObservation | None,
+    ) -> FeatureVector:
+        """Build non-vintage features from history known at ``knowledge_as_of``.
+
+        Historical weather vintages are unavailable, so weather features remain
+        neutral rather than leaking subsequently observed weather into training.
+        """
+        return self._assemble(feature_as_of, knowledge_as_of, prices, storage, ())
+
+    @staticmethod
+    def _assemble(
+        feature_as_of: datetime,
+        knowledge_as_of: datetime,
+        prices: Sequence[PriceObservation],
+        storage: StorageObservation | None,
+        weather: Sequence[WeatherObservation],
+    ) -> FeatureVector:
         if len(prices) < 21:
             raise ValueError("at least 21 point-in-time price observations are required")
         values = [row.price for row in prices]
         latest = values[-1]
-        storage = self.repository.latest_storage_as_of(as_of)
-        weather = self.repository.weather_as_of(as_of, as_of.date() + timedelta(days=14))
 
         def degree_days(days: int, field: str) -> float:
-            through = as_of.date() + timedelta(days=days)
+            through = feature_as_of.date() + timedelta(days=days)
             selected = [
-                getattr(w, field) for w in weather if as_of.date() < w.observation_date <= through
+                getattr(w, field)
+                for w in weather
+                if feature_as_of.date() < w.observation_date <= through
             ]
             return sum(selected) / max(1, len({w.region for w in weather}))
 
         anomaly_values = [w.temperature_anomaly for w in weather]
         mean20 = fmean(values[-20:])
-        month = float(as_of.month)
+        month = float(feature_as_of.month)
         features = {
             "price_lag_1": values[-1],
             "price_lag_2": values[-2],
@@ -105,9 +133,9 @@ class FeatureBuilder:
             "cdd_14d": degree_days(14, "cdd"),
             "temperature_anomaly": fmean(anomaly_values) if anomaly_values else 0.0,
             "month": month,
-            "winter_flag": float(as_of.month in {12, 1, 2}),
-            "summer_flag": float(as_of.month in {6, 7, 8}),
-            "heating_season": float(as_of.month in {11, 12, 1, 2, 3}),
+            "winter_flag": float(feature_as_of.month in {12, 1, 2}),
+            "summer_flag": float(feature_as_of.month in {6, 7, 8}),
+            "heating_season": float(feature_as_of.month in {11, 12, 1, 2, 3}),
         }
         if not all(math.isfinite(v) for v in features.values()):
             raise ValueError("feature vector contains a non-finite value")
@@ -116,6 +144,6 @@ class FeatureBuilder:
             + ([storage.publication_timestamp] if storage else [])
             + [w.publication_timestamp for w in weather]
         )
-        if latest_timestamp > as_of:
+        if latest_timestamp > knowledge_as_of:
             raise AssertionError("point-in-time violation")
-        return FeatureVector(as_of, features, latest, latest_timestamp)
+        return FeatureVector(feature_as_of, features, latest, latest_timestamp)

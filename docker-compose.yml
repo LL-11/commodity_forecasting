@@ -8,6 +8,7 @@ services:
       COMMODITY_AI_MODEL_BACKEND: xgboost
       COMMODITY_AI_MLFLOW_ENABLED: "true"
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: henry-hub-xgboost-docker
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-sol}
       COMMODITY_AI_MCP_URL: http://mcp:8001/mcp
@@ -35,6 +36,7 @@ services:
       COMMODITY_AI_MODEL_BACKEND: xgboost
       COMMODITY_AI_MLFLOW_ENABLED: "true"
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_EXPERIMENT_NAME: henry-hub-xgboost-docker
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-sol}
       COMMODITY_AI_MCP_URL: http://mcp:8001/mcp
@@ -64,6 +66,8 @@ services:
       - 0.0.0.0
       - --port
       - "5000"
+      - --allowed-hosts
+      - "mlflow:5000,localhost:*,127.0.0.1:*"
     ports:
       - "5000:5000"
     volumes:

@@ -54,9 +54,18 @@ def get_weather_signal(as_of: str, horizon: int) -> dict[str, object]:
 
 
 @mcp.tool()
-def run_forecast(as_of: str, horizons: list[int]) -> list[dict[str, object]]:
+def run_forecast(
+    as_of: str,
+    horizons: list[int],
+    training_mode: str = "point_in_time",
+) -> list[dict[str, object]]:
     """Run numerical models. An LLM must not modify the returned forecast values."""
-    return [row.to_dict() for row in forecast_service.run_forecast(parse_datetime(as_of), horizons)]
+    return [
+        row.to_dict()
+        for row in forecast_service.run_forecast(
+            parse_datetime(as_of), horizons, training_mode=training_mode
+        )
+    ]
 
 
 @mcp.tool()

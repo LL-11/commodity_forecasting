@@ -33,10 +33,19 @@ def market_snapshot(as_of: str) -> dict[str, object]:
 
 
 @app.post("/forecasts")
-def run_forecast(as_of: str, horizons: str = "1,5,20") -> list[dict[str, object]]:
+def run_forecast(
+    as_of: str,
+    horizons: str = "1,5,20",
+    training_mode: str = "point_in_time",
+) -> list[dict[str, object]]:
     try:
         requested = [int(value) for value in horizons.split(",")]
-        return [item.to_dict() for item in forecasts.run_forecast(parse_datetime(as_of), requested)]
+        return [
+            item.to_dict()
+            for item in forecasts.run_forecast(
+                parse_datetime(as_of), requested, training_mode=training_mode
+            )
+        ]
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
 

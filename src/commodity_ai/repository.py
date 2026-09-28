@@ -306,6 +306,39 @@ class MarketRepository:
             for r in rows
         ]
 
+    def first_published_prices_as_of(self, as_of: datetime) -> list[PriceObservation]:
+        """Return the first revision published for each observation date."""
+        rows = self.connection.execute(
+            """SELECT p.* FROM price_daily p
+               WHERE p.publication_timestamp <= ? AND p.observation_date <= ?
+                 AND p.rowid = (
+                     SELECT first.rowid FROM price_daily first
+                     WHERE first.observation_date = p.observation_date
+                       AND first.publication_timestamp <= ?
+                     ORDER BY first.publication_timestamp ASC, first.source ASC
+                     LIMIT 1
+                 )
+               ORDER BY p.observation_date""",
+            (as_of.isoformat(), as_of.date().isoformat(), as_of.isoformat()),
+        ).fetchall()
+        return [
+            PriceObservation(
+                parse_date(row["observation_date"]),
+                row["price"],
+                parse_datetime(row["publication_timestamp"]),
+                parse_datetime(row["ingestion_timestamp"]),
+                row["source"],
+                row["unit"],
+            )
+            for row in rows
+        ]
+
+    def latest_price_publication_timestamp(self) -> datetime | None:
+        row = self.connection.execute(
+            "SELECT MAX(publication_timestamp) latest FROM price_daily"
+        ).fetchone()
+        return parse_datetime(row["latest"]) if row and row["latest"] else None
+
     def latest_storage_as_of(self, as_of: datetime) -> StorageObservation | None:
         row = self.connection.execute(
             """SELECT * FROM storage_weekly WHERE publication_timestamp <= ?
@@ -324,6 +357,34 @@ class MarketRepository:
             parse_datetime(row["ingestion_timestamp"]),
             row["source"],
         )
+
+    def storage_history_as_of(self, as_of: datetime) -> list[StorageObservation]:
+        """Return the latest known revision of each storage period."""
+        rows = self.connection.execute(
+            """SELECT s.* FROM storage_weekly s
+               JOIN (
+                   SELECT period_end, MAX(publication_timestamp) pub
+                   FROM storage_weekly
+                   WHERE publication_timestamp <= ?
+                   GROUP BY period_end
+               ) latest ON s.period_end = latest.period_end
+                       AND s.publication_timestamp = latest.pub
+               ORDER BY s.period_end""",
+            (as_of.isoformat(),),
+        ).fetchall()
+        return [
+            StorageObservation(
+                parse_date(row["period_end"]),
+                row["storage_bcf"],
+                row["weekly_change_bcf"],
+                row["five_year_average_bcf"],
+                row["last_year_bcf"],
+                parse_datetime(row["publication_timestamp"]),
+                parse_datetime(row["ingestion_timestamp"]),
+                row["source"],
+            )
+            for row in rows
+        ]
 
     def weather_as_of(self, as_of: datetime, through: date) -> list[WeatherObservation]:
         rows = self.connection.execute(

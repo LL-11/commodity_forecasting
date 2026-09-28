@@ -25,7 +25,7 @@ DEFAULT_EIA_REPORTS = (
     ),
     ReportSource(
         "EIA Short-Term Energy Outlook: Natural Gas",
-        "https://www.eia.gov/outlooks/steo/marketreview/natgas.php",
+        "https://www.eia.gov/outlooks/steo/report/natgas.php",
         "steo",
     ),
     ReportSource(

@@ -25,6 +25,61 @@ class BacktestResult:
     calibration_residuals: tuple[float, ...]
 
 
+def point_forecast_metrics(
+    actual: Sequence[float],
+    predicted: Sequence[float],
+    baselines: Sequence[float],
+    moving_average_baselines: Sequence[float],
+) -> dict[str, float]:
+    """Calculate shared point-forecast and baseline metrics."""
+    if not (len(actual) == len(predicted) == len(baselines) == len(moving_average_baselines)):
+        raise ValueError("metric inputs must have equal lengths")
+    if not actual:
+        raise ValueError("at least one prediction is required")
+    model_mae = mae(actual, predicted)
+    baseline_mae = mae(actual, baselines)
+    moving_average_mae = mae(actual, moving_average_baselines)
+    directional_accuracy = sum(
+        ((estimate - base) * (observed - base)) > 0
+        for observed, estimate, base in zip(actual, predicted, baselines, strict=True)
+    ) / len(actual)
+    return {
+        "mae": model_mae,
+        "rmse": rmse(actual, predicted),
+        "mape": mape(actual, predicted),
+        "smape": smape(actual, predicted),
+        "baseline_mae": baseline_mae,
+        "moving_average_baseline_mae": moving_average_mae,
+        "skill_vs_naive": 1 - model_mae / baseline_mae if baseline_mae else 0.0,
+        "skill_vs_moving_average": (
+            1 - model_mae / moving_average_mae if moving_average_mae else 0.0
+        ),
+        "directional_accuracy": directional_accuracy,
+        "observations": float(len(actual)),
+    }
+
+
+def interval_forecast_metrics(
+    actual: Sequence[float], p10: Sequence[float], p90: Sequence[float]
+) -> dict[str, float]:
+    """Calculate interval metrics over predictions with eligible bounds."""
+    if not (len(actual) == len(p10) == len(p90)):
+        raise ValueError("interval metric inputs must have equal lengths")
+    if not actual:
+        return {"interval_observations": 0.0}
+    coverage = sum(
+        low <= observed <= high for low, observed, high in zip(p10, actual, p90, strict=True)
+    ) / len(actual)
+    width = sum(high - low for low, high in zip(p10, p90, strict=True)) / len(actual)
+    return {
+        "p10_pinball_loss": pinball_loss(actual, p10, 0.10),
+        "p90_pinball_loss": pinball_loss(actual, p90, 0.90),
+        "prediction_interval_coverage": coverage,
+        "prediction_interval_width": width,
+        "interval_observations": float(len(actual)),
+    }
+
+
 def walk_forward_backtest(
     features: Sequence[Sequence[float]],
     targets: Sequence[float],
@@ -80,41 +135,15 @@ def walk_forward_backtest(
     residuals = [a - p for a, p in zip(actual, predicted, strict=True)]
     residual_p10 = quantile(residuals, 0.10)
     residual_p90 = quantile(residuals, 0.90)
-    model_mae = mae(actual, predicted)
-    baseline_mae = mae(actual, baseline)
-    moving_average_mae = mae(actual, moving_average_baseline)
     calibrated_p10 = [max(0.0, value + residual_p10) for value in predicted]
     calibrated_p90 = [max(0.0, value + residual_p90) for value in predicted]
-    coverage = sum(
-        low <= observed <= high
-        for low, observed, high in zip(calibrated_p10, actual, calibrated_p90, strict=True)
-    ) / len(predictions)
-    width = sum(high - low for low, high in zip(calibrated_p10, calibrated_p90, strict=True)) / len(
-        predictions
-    )
-    directional_accuracy = sum(
-        ((estimate - base) * (observed - base)) > 0
-        for observed, estimate, base in zip(actual, predicted, baseline, strict=True)
-    ) / len(predictions)
+    metrics = point_forecast_metrics(actual, predicted, baseline, moving_average_baseline)
+    interval_metrics = interval_forecast_metrics(actual, calibrated_p10, calibrated_p90)
     return BacktestResult(
         tuple(predictions),
         {
-            "mae": model_mae,
-            "rmse": rmse(actual, predicted),
-            "mape": mape(actual, predicted),
-            "smape": smape(actual, predicted),
-            "baseline_mae": baseline_mae,
-            "moving_average_baseline_mae": moving_average_mae,
-            "skill_vs_naive": 1 - model_mae / baseline_mae if baseline_mae else 0.0,
-            "skill_vs_moving_average": (
-                1 - model_mae / moving_average_mae if moving_average_mae else 0.0
-            ),
-            "prediction_interval_coverage": coverage,
-            "prediction_interval_width": width,
-            "directional_accuracy": directional_accuracy,
-            "p10_pinball_loss": pinball_loss(actual, calibrated_p10, 0.10),
-            "p90_pinball_loss": pinball_loss(actual, calibrated_p90, 0.90),
-            "observations": float(len(predictions)),
+            **metrics,
+            **interval_metrics,
         },
         tuple(residuals),
     )

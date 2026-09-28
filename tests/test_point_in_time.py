@@ -27,6 +27,10 @@ class PointInTimeTests(unittest.TestCase):
         )
         self.assertEqual(self.repo.prices_as_of(early + timedelta(hours=1))[0].price, 3.0)
         self.assertEqual(self.repo.prices_as_of(late + timedelta(hours=1))[0].price, 9.0)
+        self.assertEqual(
+            self.repo.first_published_prices_as_of(late + timedelta(hours=1))[0].price,
+            3.0,
+        )
 
     def test_future_report_is_excluded_before_ranking(self) -> None:
         cutoff = datetime(2025, 1, 15, tzinfo=UTC)

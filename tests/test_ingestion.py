@@ -4,10 +4,20 @@ import unittest
 from datetime import UTC, datetime
 
 from commodity_ai.ingestion.eia import normalize_henry_hub, normalize_storage
+from commodity_ai.ingestion.reports import DEFAULT_EIA_REPORTS
 from commodity_ai.ingestion.weather import WeatherLocation, normalize_weather
 
 
 class EIAIngestionTests(unittest.TestCase):
+    def test_report_sources_use_current_steo_routes(self) -> None:
+        natural_gas = next(
+            source for source in DEFAULT_EIA_REPORTS if source.title.endswith("Natural Gas")
+        )
+        self.assertEqual(
+            natural_gas.url,
+            "https://www.eia.gov/outlooks/steo/report/natgas.php",
+        )
+
     def test_normalizer_skips_missing_values_and_tracks_first_seen_time(self) -> None:
         ingested = datetime(2025, 2, 1, 12, tzinfo=UTC)
         payload = {

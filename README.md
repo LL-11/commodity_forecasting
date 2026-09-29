@@ -24,7 +24,7 @@ This software is educational. Forecasts and backtests are not trading or investm
 
 ## Local quick start
 
-Python 3.11 or newer is required.
+Python 3.12 or newer is required.
 
 ```powershell
 python -m venv .venv

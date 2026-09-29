@@ -7,7 +7,7 @@ name = "commodity-ai"
 version = "0.1.0"
 description = "Henry Hub forecasting with explicit historical and point-in-time modes"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 dependencies = []
 

@@ -1,21 +1,26 @@
 # Henry Hub Commodity Intelligence
 
-A point-in-time-correct forecasting and market-intelligence platform for Henry Hub natural gas. Numerical forecasts are produced by XGBoost; the LLM can retrieve and explain them but cannot create or modify them.
+A forecasting and market-intelligence platform for Henry Hub natural gas with two explicit
+training modes: point-in-time replay when vintage snapshots are available, and immediately
+usable non-vintage training over bulk EIA history. Numerical forecasts are produced by
+XGBoost; the LLM can retrieve and explain them but cannot create or modify them.
 
 ## Implemented
 
 - Live EIA Henry Hub price and Lower-48 storage ingestion, population-weighted Open-Meteo weather, and EIA report ingestion with retained raw snapshots
-- Leakage-safe features and direct XGBoost models for 1, 5, and 20 observed-business-day horizons
+- Point-in-time feature replay plus clearly labeled, potentially revision-biased historical features for direct XGBoost models at 1, 5, and 20 observed-business-day horizons
 - Persistence and five-day-average baselines, walk-forward validation, out-of-sample residual calibration, interval coverage, pinball loss, and skill metrics
 - Native XGBoost TreeSHAP contributions persisted with each forecast
 - Optional MLflow experiment, metric, dataset fingerprint, Git revision, feature manifest, and model artifact tracking
 - Fixed-width rolling XGBoost backtests with leakage-safe prior-only interval calibration and nested MLflow period runs
 - Point-in-time hybrid BM25/TF-IDF/vector retrieval, persistent embeddings, deterministic reranking, metadata filters, citations, and a RAG benchmark CLI
 - MCP tools, resources, templates, and an OpenAI Responses API agent that discovers and calls the MCP server
-- FastAPI endpoints and a seven-view Streamlit application for market, forecast, drivers, intelligence, Ask AI, evaluation, and data quality
+- FastAPI endpoints and an eight-view Streamlit application for market, forecast, drivers, intelligence, Ask AI, forecast evaluation, model evaluation, and data quality
 - Docker Compose services for Streamlit, FastAPI, MCP over streamable HTTP, and MLflow
 
 The repository ships with deterministic synthetic data for validation. Demo observations are never labeled as live data.
+
+This software is educational. Forecasts and backtests are not trading or investment advice.
 
 ## Local quick start
 
@@ -54,6 +59,19 @@ the normal storage-release lag, and omits unavailable historical weather vintage
 Its evaluation can be revision-biased and is labeled accordingly. **Point-in-time**
 replays only data visible at each cutoff and therefore requires accumulated ingestion
 snapshots before it can train.
+
+## Data sources and attribution
+
+- Energy prices, storage data, and market reports are sourced from the
+  [U.S. Energy Information Administration](https://www.eia.gov/). EIA does not endorse this
+  project. Application transformations, forecasts, and errors are the responsibility of this
+  project, not EIA.
+- Weather data is provided by [Open-Meteo](https://open-meteo.com/) under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The application aggregates and
+  transforms regional weather values into population-weighted forecasting features.
+
+API keys, downloaded raw responses, normalized databases, and MLflow artifacts are local
+runtime data and are not distributed with the repository.
 
 ## RAG and agent configuration
 
@@ -170,6 +188,11 @@ docker compose up --build
 
 The services share `./data`. Put `EIA_API_KEY`, `OPENAI_API_KEY`, and optionally `OPENAI_MODEL` in a local `.env` file before starting Compose.
 
+All published Compose ports bind to `127.0.0.1`. The included Streamlit, FastAPI, MCP, and
+MLflow services do not provide production authentication. Keep them on a trusted local
+machine; an internet deployment requires TLS, authentication, an access-controlled reverse
+proxy, network restrictions, and managed secrets.
+
 ## Verification
 
 ```powershell
@@ -180,9 +203,21 @@ python -m mypy src app
 docker compose config
 ```
 
-## Point-in-time invariant
+Before changing repository visibility, scan the full Git history with Gitleaks:
 
-Every source record carries observation, publication, and ingestion timestamps. All feature and retrieval queries enforce `publication_timestamp <= as_of`. Forecast records retain model version, forecast timestamp, latest-data timestamp, calibrated interval, drivers, and historical metrics.
+```powershell
+docker run --rm -v "${PWD}:/repo" `
+  zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f `
+  detect --source=/repo --redact --no-banner
+```
+
+## Point-in-time boundary
+
+Every source record carries observation, publication, and ingestion timestamps. Point-in-time
+feature, rolling-backtest, and retrieval paths enforce `publication_timestamp <= as_of`.
+Historical forecast mode intentionally uses the latest bulk history and is labeled non-vintage
+and potentially revision-biased. Forecast records retain the model/training-mode version,
+forecast timestamp, latest-data timestamp, calibrated interval, drivers, and metrics.
 
 ```text
 structured data -> point-in-time features -> XGBoost -> forecast + TreeSHAP
@@ -193,3 +228,8 @@ forecast + evidence -> MCP tools -> LLM agent -> grounded explanation
 ## Deliberate remaining scope
 
 The specification's post-MVP items are not disguised as complete: SARIMAX comparison, expanded fundamentals, regime-segmented evaluation, a 50–100-question frozen RAG/agent evaluation corpus, answer-level faithfulness judging, cloud deployment, and later commodities remain future work. This software is educational and is not trading advice.
+
+## License
+
+Code is licensed under the [MIT License](LICENSE). Data obtained from external providers remains
+subject to the applicable provider terms described above.

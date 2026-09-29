@@ -2,7 +2,7 @@ services:
   dashboard:
     build: .
     ports:
-      - "8501:8501"
+      - "127.0.0.1:8501:8501"
     environment:
       COMMODITY_AI_DB: /app/data/commodity_ai.db
       COMMODITY_AI_MODEL_BACKEND: xgboost
@@ -30,7 +30,7 @@ services:
     build: .
     command: ["uvicorn", "commodity_ai.api:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       COMMODITY_AI_DB: /app/data/commodity_ai.db
       COMMODITY_AI_MODEL_BACKEND: xgboost
@@ -69,7 +69,7 @@ services:
       - --allowed-hosts
       - "mlflow:5000,localhost:*,127.0.0.1:*"
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     volumes:
       - ./data:/app/data
     healthcheck:
@@ -85,7 +85,7 @@ services:
       - -c
       - from commodity_ai.mcp_server import mcp; mcp.run('streamable-http', host='0.0.0.0', port=8001, stateless_http=True)
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     environment:
       COMMODITY_AI_DB: /app/data/commodity_ai.db
       COMMODITY_AI_MODEL_BACKEND: xgboost

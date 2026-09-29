@@ -20,8 +20,8 @@ from commodity_ai.tracking import MLflowTracker
 st.set_page_config(page_title="Henry Hub Intelligence", page_icon="🔥", layout="wide")
 st.title("Henry Hub Commodity Intelligence")
 st.caption(
-    "Point-in-time XGBoost forecasts with calibrated intervals, TreeSHAP drivers, "
-    "hybrid retrieval, and an MCP-grounded analyst."
+    "XGBoost forecasts with explicit historical or point-in-time training, calibrated "
+    "intervals, TreeSHAP drivers, hybrid retrieval, and an MCP-grounded analyst."
 )
 
 
@@ -506,3 +506,9 @@ with quality_tab:
         "Run `commodity-ai ingest-live` with EIA_API_KEY for live market inputs. "
         "Raw source snapshots are retained under data/raw/."
     )
+
+st.divider()
+st.caption(
+    "Educational software only. Forecasts and backtests are not trading or investment advice. "
+    "Historical-mode results are non-vintage and may be revision-biased."
+)

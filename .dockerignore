@@ -1,10 +1,12 @@
 .git
 .venv
+.env
+.env.*
 .pytest_cache
 .mypy_cache
 .ruff_cache
 __pycache__
 *.pyc
-data/*.db
+*.db
 data/mlartifacts
 data/raw

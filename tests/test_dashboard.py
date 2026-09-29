@@ -42,8 +42,7 @@ class PriceChartDataTests(unittest.TestCase):
     def test_limits_to_latest_120_observations_after_sorting(self) -> None:
         start = date(2026, 1, 1)
         prices = [
-            price_observation(start + timedelta(days=index), float(index))
-            for index in range(125)
+            price_observation(start + timedelta(days=index), float(index)) for index in range(125)
         ]
         prices.reverse()
 
@@ -81,9 +80,7 @@ class PriceChartDataTests(unittest.TestCase):
 @unittest.skipUnless(ALTAIR_AVAILABLE, "Altair UI dependency is not installed")
 class PriceChartSpecificationTests(unittest.TestCase):
     def test_chart_uses_temporal_x_axis_and_date_price_tooltips(self) -> None:
-        chart_data = prepare_price_chart_data(
-            [price_observation(date(2026, 9, 1), 2.80)]
-        )
+        chart_data = prepare_price_chart_data([price_observation(date(2026, 9, 1), 2.80)])
 
         specification = build_henry_hub_price_chart(chart_data).to_dict()
         encoding = specification["encoding"]

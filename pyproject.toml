@@ -5,30 +5,30 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "commodity-ai"
 version = "0.1.0"
-description = "Point-in-time-correct Henry Hub forecasting and market intelligence"
+description = "Henry Hub forecasting with explicit historical and point-in-time modes"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 dependencies = []
 
 [project.optional-dependencies]
-api = ["fastapi>=0.115", "uvicorn>=0.30"]
-mcp = ["mcp>=1.0"]
-ui = ["streamlit>=1.40", "altair>=5.0"]
-ml = ["xgboost>=2.1", "shap>=0.46", "mlflow>=2.17"]
-agent = ["openai>=1.54"]
+api = ["fastapi==0.141.1", "uvicorn==0.54.0"]
+mcp = ["mcp==2.2.0"]
+ui = ["streamlit==1.64.0", "altair==6.3.0"]
+ml = ["xgboost==3.4.1", "shap==0.52.0", "mlflow==3.16.1"]
+agent = ["openai==3.20.0"]
 all = [
-    "fastapi>=0.115",
-    "uvicorn>=0.30",
-    "mcp>=1.0",
-    "streamlit>=1.40",
-    "altair>=5.0",
-    "xgboost>=2.1",
-    "shap>=0.46",
-    "mlflow>=2.17",
-    "openai>=1.54",
+    "fastapi==0.141.1",
+    "uvicorn==0.54.0",
+    "mcp==2.2.0",
+    "streamlit==1.64.0",
+    "altair==6.3.0",
+    "xgboost==3.4.1",
+    "shap==0.52.0",
+    "mlflow==3.16.1",
+    "openai==3.20.0",
 ]
-dev = ["pytest>=8", "ruff>=0.8", "mypy>=1.13"]
+dev = ["pytest==9.1.1", "ruff==0.16.9", "mypy==2.3.1"]
 
 [project.scripts]
 commodity-ai = "commodity_ai.cli:main"

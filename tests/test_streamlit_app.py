@@ -118,6 +118,9 @@ class StreamlitBacktestTests(unittest.TestCase):
         )
         self.assertEqual(training_mode.value, "Historical (bulk EIA, non-vintage)")
         self.assertTrue(any("revision-biased" in message.value for message in app.warning))
+        self.assertTrue(
+            any("not trading or investment advice" in item.value for item in app.caption)
+        )
 
     def test_model_evaluation_tab_renders_results_and_mlflow_trace(self) -> None:
         with patch.dict(

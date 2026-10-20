@@ -16,7 +16,7 @@ api = ["fastapi==0.141.1", "uvicorn==0.54.0"]
 mcp = ["mcp==2.3.0"]
 ui = ["streamlit==1.65.0", "altair==6.3.0"]
 ml = ["xgboost==3.4.1", "shap==0.52.0", "mlflow==3.16.1"]
-agent = ["openai==3.24.0"]
+agent = ["openai==3.33.0"]
 all = [
     "fastapi==0.141.1",
     "uvicorn==0.54.0",
@@ -26,7 +26,7 @@ all = [
     "xgboost==3.4.1",
     "shap==0.52.0",
     "mlflow==3.16.1",
-    "openai==3.24.0",
+    "openai==3.33.0",
 ]
 dev = ["pytest==9.1.1", "ruff==0.17.1", "mypy==2.4.0"]
 
